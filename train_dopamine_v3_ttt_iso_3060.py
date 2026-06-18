@@ -1,64 +1,57 @@
 # -*- coding: utf-8 -*-
 """
 ╔══════════════════════════════════════════════════════════════════╗
-║  DOPAMINE  v3.0-TTT-Iso  —  Isomeric Test-Time Training [3060]  ║
-║  TwoQuarks — Luis Jaime Ledesma Pérez                           ║
+║  DOPAMINE  v3.0-TTT-Iso  —  Isomeric Test-Time Training [3060]   ║
+║  TwoQuarks — Luis Jaime Ledesma Pérez                            ║
 ╠══════════════════════════════════════════════════════════════════╣
-║  Base: v2.3c (3060 config + PfV Monitor + rho-mixing Axon).     ║
-║  Nuevo: Isomeric TTT aplicado al PerceptionAgent en eval.       ║
+║  Base: v2.3c (3060 config + PfV Monitor + rho-mixing Axon).      ║
+║  Build: Isomeric TTT aplicado al PerceptionAgent en eval.        ║
 ║                                                                  ║
-║  ISOMERIC TTT — propuesta original (Ledesma, 2026):             ║
+║  ISOMERIC TTT — (Ledesma, 2026):                                 ║
 ║                                                                  ║
 ║    TTT canónico (Sun et al.) usa L_SSL = next-token CE.          ║
-║    Aquí sustituimos por coherencia isomérica del ResonanceBuffer:║
+║      L_iso = |P_t(R ∪ {p_new}) - P_regime| + β·|Δ²P_t|           ║
 ║                                                                  ║
-║      L_iso = |P_t(R ∪ {p_new}) - P_regime| + β·|Δ²P_t|          ║
+║    Where:                                                        ║
+║      R         = ResonanceBuffer.slots (K, D) — fingerprint      ║
+║      p_new     = perceptual_flow.mean(0,1)    — continuous flow  ║
+║      P_t       = middle polarization (cosine-dist pairs)         ║
+║      P_regime  = EMA window from P_t record                      ║
+║      Δ²P_t     = polarization acceleration                       ║
 ║                                                                  ║
-║    donde:                                                        ║
-║      R         = ResonanceBuffer.slots (K, D) — huella previa    ║
-║      p_new     = perceptual_flow.mean(0,1)    — flujo candidato ║
-║      P_t       = polarización media (cosine-dist pairs)         ║
-║      P_regime  = EMA window del P_t histórico                    ║
-║      Δ²P_t     = aceleración de polarización                     ║
+║  Integration (LEGAL "score-first TTT"):                          ║
+║    1. Measures: bpb in chunk_i  (score graded)                   ║
+║    2. TTT inner loop with chunk_i (K steps on L_iso)             ║
+║    3. Evaluate chunk_i+1 with adaptative steps                   ║
 ║                                                                  ║
-║  Integración (LEGAL "score-first TTT"):                         ║
-║    1. Mide bpb en chunk_i  (score ya graded)                    ║
-║    2. TTT inner loop con chunk_i (K pasos sobre L_iso)          ║
-║    3. Evalúa chunk_i+1 con pesos adaptados                      ║
+║  PerceptionAgent Only is adaptep if (c_q/c_k/c_v/proj/gate).     ║
+║  Soma, Dendrite, embedding, Axon → frozen on TTT.                ║
 ║                                                                  ║
-║  Solo el PerceptionAgent se adapta (c_q/c_k/c_v/proj/gate).     ║
-║  Soma, Dendrite, embedding, Axon → congelados en TTT.           ║
-║                                                                  ║
-║  Legalidad (OpenAI Parameter Golf rules, April 2026):           ║
-║    ✓ L_iso es ciego al target (no toca y)                       ║
-║    ✓ TTT opera solo sobre tokens YA graded                      ║
-║    ✓ Compatible con score-first TTT del leaderboard             ║
+║ trained with the dataset of OpenAI Parameter Golf, April 2026:   ║
 ╠══════════════════════════════════════════════════════════════════╣
-║  RTX 3060 12GB VARIANT — defaults ajustados:                    ║
-║    • train_batch_tokens = 16384    (vs 65536 en H100)           ║
-║    • train_seq_len      = 256      (vs 512 en H100)             ║
-║    • val_batch_size     = 16384    (vs 65536 en H100)           ║
-║    • iterations default = 1000     (smoke 3060-friendly)        ║
-║    • USE_COMPILE default = 0       (eager por default)          ║
+║  RTX 3060 12GB VARIANT — defaults:                               ║
+║    • train_batch_tokens = 16384    (vs 65536 on H100)            ║
+║    • train_seq_len      = 256      (vs 512 on H100)              ║
+║    • val_batch_size     = 16384    (vs 65536 on H100)            ║
+║    • iterations default = 1000     (smoke 3060-friendly)         ║
+║    • USE_COMPILE default = 0       (eager - default)             ║
 ║                                                                  ║
-║  TTT env vars (nuevos):                                         ║
-║    TTT_ENABLED=1           (default ON — activa TTT-Iso en val) ║
-║    TTT_INNER_STEPS=3       (K pasos por chunk)                  ║
-║    TTT_LR=5e-4             (lr inner loop — conservador)        ║
-║    TTT_BETA=0.1            (peso de |Δ²P_t| en L_iso)           ║
-║    TTT_RESET_EACH_CHUNK=0  (1=reset a pre-TTT state cada chunk) ║
-║    TTT_WARMUP_CHUNKS=2     (chunks con buffer warmup sin adapt) ║
+║  TTT env vars:                                                   ║
+║    TTT_ENABLED=1           (default ON — activate TTT-Iso)       ║
+║    TTT_INNER_STEPS=3       (K steps for chunk)                   ║
+║    TTT_LR=5e-4             (lr inner loop)                       ║
+║    TTT_BETA=0.1            (steps to |Δ²P_t| on L_iso)           ║
+║    TTT_RESET_EACH_CHUNK=0  (1=reset to pre-TTT state / chunk)    ║
+║    TTT_WARMUP_CHUNKS=2     (chunks buffer warmup without adapt)  ║
 ║                                                                  ║
-║  Si quieres override a H100-like, usa env vars:                 ║
-║    TRAIN_BATCH_TOKENS=65536 TRAIN_SEQ_LEN=512 ... python ...    ║
 ╠══════════════════════════════════════════════════════════════════╣
-║  Architecture: Neocortical 3-phase model + Emergent Memory      ║
+║  Architecture: Neocortical 3-phase model + Emergent Memory       ║
 ║                                                                  ║
-║  Phase 1 — DENDRITIC ENCODER  (Experiencia)                     ║
+║  Phase 1 — DENDRITIC ENCODER  (Experience)                       ║
 ║    Multi-field receptive attention: local/mid/global.            ║
 ║    Independent agents processing the same input in parallel.     ║
 ║                                                                  ║
-║  Phase 1.5 — PERCEPTION AGENT  (Percepción)                     ║
+║  Phase 1.5 — PERCEPTION AGENT  (Perception)                      ║
 ║    NEW: Independent agent — reads similarity between             ║
 ║    current experience (DendriticOut) and past flow               ║
 ║    (ResonanceBuffer). Generates PerceptualFlow — a signal        ║
@@ -66,19 +59,19 @@
 ║    High resonance → recognition signal enters Soma.              ║
 ║    Low resonance  → Soma processes pure experience.              ║
 ║                                                                  ║
-║  Phase 1.75 — RESONANCE BUFFER  (Memoria emergente)             ║
-║    NEW: Not stored — flows. EMA ring buffer of Soma              ║
+║  Phase 1.75 — RESONANCE BUFFER  (Emergent Memories)              ║
+║    Not stored — flows. EMA ring buffer of Soma                   ║
 ║    hidden states from previous forward passes.                   ║
 ║    Memory appears when current state resembles past flow.        ║
 ║    No trainable params — pure observation of the medium.         ║
 ║                                                                  ║
-║  Phase 2 — SOMA CORE  (El Medio)                                ║
+║  Phase 2 — SOMA CORE  (Medium)                                   ║
 ║    The vehicle, not the processor. Holds without collapsing.     ║
 ║    No more nucleus — Soma is now pure medium.                    ║
 ║    Receives: Experience (Dendritic) + Perception (Perceptual).   ║
 ║    U-Net skips: all abstraction levels accessible.               ║
 ║                                                                  ║
-║  Phase 3 — AXON PROJECTOR + MOLECULE GATE                       ║
+║  Phase 3 — AXON PROJECTOR + MOLECULE GATE                        ║
 ║    Unchanged — selective transmission, think before speaking.    ║
 ║                                                                  ║
 ║  Theory:                                                         ║
@@ -117,14 +110,10 @@ import torch.distributed as dist
 import torch.nn.functional as F
 from torch import Tensor, nn
 
-
-# ─────────────────────────────────────────────────────────────
 # HYPERPARAMETERS
-# ─────────────────────────────────────────────────────────────
-
 class Hyperparameters:
     # Data
-    _here           = os.path.dirname(os.path.abspath(__file__))
+    _here = os.path.dirname(os.path.abspath(__file__))
     _base = _here
     for _ in range(3):
         if os.path.isdir(os.path.join(_base, "data")):
@@ -138,21 +127,18 @@ class Hyperparameters:
                         os.path.join(_base, "data", "tokenizers", "fineweb_1024_bpe.model"))
     run_id         = os.environ.get("RUN_ID", str(uuid.uuid4()))
     seed           = int(os.environ.get("SEED", 42))
-
-    # Validation — RTX 3060 12GB: batch reducido para no OOM en val
+    # Validation
     val_batch_size  = int(os.environ.get("VAL_BATCH_SIZE", 16_384))    # 3060: 16K tokens
-    val_loss_every  = int(os.environ.get("VAL_LOSS_EVERY", 250))       # cada 250 steps
-    train_log_every = int(os.environ.get("TRAIN_LOG_EVERY", 50))       # cada 50 steps
-
-    # Training schedule — 3060-friendly defaults (1000 steps smoke, batch pequeño)
+    val_loss_every  = int(os.environ.get("VAL_LOSS_EVERY", 250))       # 250 steps
+    train_log_every = int(os.environ.get("TRAIN_LOG_EVERY", 50))       # 50 steps
+    # Training schedule 
     iterations            = int(os.environ.get("ITERATIONS", 1_000))
-    warmdown_iters        = int(os.environ.get("WARMDOWN_ITERS", 300))    # 30% del run
+    warmdown_iters        = int(os.environ.get("WARMDOWN_ITERS", 300))    # 30% for the run
     warmup_steps          = int(os.environ.get("WARMUP_STEPS", 10))
-    # 3060: 16K tokens × seq_len=256 = B=64 por micro-batch, con grad_accum=4 → efectivo 64K
+    # 3060: 16K tokens × seq_len=256 = B=64|micro-batch| grad_accum=4 → efective 64K
     train_batch_tokens    = int(os.environ.get("TRAIN_BATCH_TOKENS", 16_384))
-    train_seq_len         = int(os.environ.get("TRAIN_SEQ_LEN", 256))     # 3060: seq más corta
+    train_seq_len         = int(os.environ.get("TRAIN_SEQ_LEN", 256))     # 3060: seq short
     max_wallclock_seconds = float(os.environ.get("MAX_WALLCLOCK_SECONDS", 99999.0))
-
     # Model
     vocab_size   = int(os.environ.get("VOCAB_SIZE", 1024))
     num_layers   = int(os.environ.get("NUM_LAYERS", 9))
@@ -162,43 +148,36 @@ class Hyperparameters:
     mlp_mult     = int(os.environ.get("MLP_MULT", 3))
     rope_base    = float(os.environ.get("ROPE_BASE", 10000.0))
     logit_softcap = float(os.environ.get("LOGIT_SOFTCAP", 30.0))
-
     # DendriticEncoder
     dendrite_field_heads = [8, 4, 4]  # v2.3b: [4,2,2]→[8,4,4], head_dim 64→32, +dendritic capacity
     dendrite_local_span  = int(os.environ.get("DENDRITE_LOCAL_SPAN", 64))
     dendrite_mid_span    = int(os.environ.get("DENDRITE_MID_SPAN", 256))
-
     # AxonProjector + MoleculeGate
     axon_n_views  = int(os.environ.get("AXON_N_VIEWS", 4))
     axon_t_min    = float(os.environ.get("AXON_T_MIN", 0.20))
     axon_t_max    = float(os.environ.get("AXON_T_MAX", 0.60))
     axon_lambda   = float(os.environ.get("AXON_LAMBDA", 0.12))
     axon_stress_threshold = float(os.environ.get("AXON_STRESS_THRESHOLD", 0.30))
-
     # [NEW] ResonanceBuffer
     resonance_slots     = int(os.environ.get("RESONANCE_SLOTS", 64))
-    resonance_ema_decay = float(os.environ.get("RESONANCE_EMA_DECAY", 0.95))  # v2.1: más sensible al flujo reciente
-    # v2.2: modo de representación de memoria
-    #   "mean"  → compat v2.1, 1 vector por slot (promedio global)
-    #   "seq"   → tira de mem_span tokens por slot (preserva factor X replicable)
-    #   "topk"  → token más activo del batch (reservoir sampling)
+    resonance_ema_decay = float(os.environ.get("RESONANCE_EMA_DECAY", 0.95))  
+    # "mean" → compat v2.1, 1 vector per slot (global average) 
+    # "seq" → strip of mem_span tokens per slot (preserves the replicable X factor)
+    # "topk" → most active token in the batch (field sampling)    
     resonance_mode      = os.environ.get("RESONANCE_MODE", "seq")
     resonance_mem_span  = int(os.environ.get("RESONANCE_MEM_SPAN", 8))
-
     # [NEW] PerceptionAgent
-    perception_heads = int(os.environ.get("PERCEPTION_HEADS", 8))  # v2.1: más granularidad
-
-    # ═════════════════════════════════════════════════════════════
+    perception_heads = int(os.environ.get("PERCEPTION_HEADS", 8))
+══
     # [v3.0 NEW] ISOMERIC TEST-TIME TRAINING (TTT-Iso)
-    # ═════════════════════════════════════════════════════════════
-    # Score-first TTT: después de medir bpb en un chunk de val,
-    # adaptar PerceptionAgent con L_iso sobre esos tokens ya graded.
-    #
-    #   L_iso = |P_t(R ∪ {p_new}) - P_regime| + β·|Δ²P_t|
-    #
-    # Sólo PerceptionAgent se adapta (Soma/Dendrite/embedding frozen).
-    # Cumple regla "test-time train only on already-graded tokens"
-    # del OpenAI Parameter Golf Challenge.
+# Score-first TTT: after measuring bpb in a val chunk, 
+# adapt PerceptionAgent with L_iso on those already graded tokens. 
+# 
+# L_iso = |P_t(R ∪ {p_new}) - P_regime| + β·|Δ²P_t| 
+# 
+# Only PerceptionAgent fits (Soma/Dendrite/embedding frozen). 
+# Complies with the rule "test-time train only on already-graded tokens" 
+# of the OpenAI Parameter Golf Challenge.
     ttt_enabled           = int(os.environ.get("TTT_ENABLED", 1))
     ttt_inner_steps       = int(os.environ.get("TTT_INNER_STEPS", 3))
     ttt_lr                = float(os.environ.get("TTT_LR", 5e-4))
@@ -207,8 +186,7 @@ class Hyperparameters:
     ttt_warmup_chunks     = int(os.environ.get("TTT_WARMUP_CHUNKS", 2))
 
     # Soma freeze (no more nucleus, just init stabilization)
-    soma_freeze_steps  = int(os.environ.get("SOMA_FREEZE_STEPS", 100))  # ~4% del run
-
+    soma_freeze_steps  = int(os.environ.get("SOMA_FREEZE_STEPS", 100)) 
     # Optimizer
     embed_lr           = float(os.environ.get("EMBED_LR", 0.05))
     matrix_lr          = float(os.environ.get("MATRIX_LR", 0.04))
@@ -226,11 +204,7 @@ class Hyperparameters:
     beta2              = float(os.environ.get("BETA2", 0.95))
     adam_eps           = float(os.environ.get("ADAM_EPS", 1e-8))
 
-
-# ─────────────────────────────────────────────────────────────
 # MUON OPTIMIZER
-# ─────────────────────────────────────────────────────────────
-
 def zeropower_via_newtonschulz5(G: Tensor, steps: int = 10, eps: float = 1e-7) -> Tensor:
     a, b, c = (3.4445, -4.7750, 2.0315)
     X = G.bfloat16()
@@ -243,7 +217,6 @@ def zeropower_via_newtonschulz5(G: Tensor, steps: int = 10, eps: float = 1e-7) -
         B = b * A + c * A @ A
         X = a * X + B @ X
     return X.T if transposed else X
-
 
 class Muon(torch.optim.Optimizer):
     def __init__(self, params, lr: float, momentum: float,
@@ -293,12 +266,8 @@ class Muon(torch.optim.Optimizer):
                 p.add_(g, alpha=-lr)
                 curr += p.numel()
         return loss
-
-
-# ─────────────────────────────────────────────────────────────
+        
 # LION OPTIMIZER
-# ─────────────────────────────────────────────────────────────
-
 class Lion(torch.optim.Optimizer):
     def __init__(self, params, lr: float = 1e-3,
                  betas: tuple[float, float] = (0.9, 0.99),
@@ -335,12 +304,8 @@ class Lion(torch.optim.Optimizer):
         return loss
 
 
-# ─────────────────────────────────────────────────────────────
-# SIX QUARKS — Isomeric Polarization
-# ─────────────────────────────────────────────────────────────
-
+#Isomeric Polarization
 class DownQuark:
-    """NTVM — mean pairwise divergence across views"""
     def compute(self, phi_list: list[Tensor]) -> tuple[float, Tensor]:
         m = len(phi_list)
         if m < 2:
@@ -356,9 +321,7 @@ class DownQuark:
         dim_div = torch.stack(diffs).mean(0).squeeze(0)
         return float(np.mean(scalar_dists)), dim_div
 
-
 class StrangeQuark:
-    """VPEC — inter-metric disagreement"""
     def compute(self, phi_list: list[Tensor]) -> float:
         m = len(phi_list)
         if m < 2: return 0.0
@@ -375,9 +338,7 @@ class StrangeQuark:
                 stds.append(float(np.std([d1, d2, d3])))
         return float(np.mean(stds)) if stds else 0.0
 
-
 class UpQuark:
-    """SDRBD — Sarle Bimodality Coefficient"""
     def compute(self, phi_list: list[Tensor]) -> float:
         m = len(phi_list)
         if m < 4: return 0.0
@@ -396,9 +357,7 @@ class UpQuark:
         bc   = (skew**2 + 1) / (kurt + 3 * (n-1)**2 / ((n-2)*(n-3) + 1e-9))
         return float(bc)
 
-
 class CharmQuark:
-    """ETSV — exponential tail separation"""
     def compute(self, phi_list: list[Tensor]) -> float:
         m = len(phi_list)
         if m < 2: return 0.0
@@ -415,9 +374,7 @@ class CharmQuark:
         if len(hi) == 0 or len(lo) == 0: return 0.0
         return float(abs(hi.mean() - lo.mean()))
 
-
 class TopQuark:
-    """MEVR — max eigenvalue variance ratio"""
     def compute(self, phi_list: list[Tensor]) -> float:
         m = len(phi_list)
         if m < 2: return 0.0
@@ -432,9 +389,7 @@ class TopQuark:
         except Exception:
             return 0.0
 
-
 class BottomQuark:
-    """CSCD — cosine similarity collapse detector"""
     def compute(self, phi_list: list[Tensor]) -> float:
         m = len(phi_list)
         if m < 2: return 0.0
@@ -446,9 +401,7 @@ class BottomQuark:
                 sims.append(abs(cos))
         return float(np.mean(sims)) if sims else 0.0
 
-
 class QuarkBundle:
-    """Aggregates all six quarks into scalar S and per-dim divergence."""
     def __init__(self):
         self.down   = DownQuark()
         self.strange = StrangeQuark()
@@ -472,34 +425,18 @@ class QuarkBundle:
         self._history.append(S)
         return S, dim_div
 
-
-# ─────────────────────────────────────────────────────────────
 # PHASE 3 — AXON PROJECTOR + MOLECULE GATE
-# ─────────────────────────────────────────────────────────────
-
 class AxonProjector(nn.Module):
-    """
-    Isomeric Polarization Axon — v2.3c (UP-style rho-mixing)
-
-    El axon se polariza segun la compresion isometrica del modelo:
-
-        rho(S) = sigmoid(k * (S - S_threshold))   in [0, 1]
-
-        c_base     = sigmoid(conductance_base)      <- sin estres: paso libre
-        c_stressed = c_base * (1 - lam * div_norm)  <- bajo estres: suprime dims redundantes
-
-        mask = (1 - rho) * c_base + rho * c_stressed
-
-    S bajo  (representaciones dispersas)  -> rho~0 -> mask~c_base    -> axon abierto
-    S alto  (representaciones comprimidas) -> rho~1 -> mask~c_stressed -> axon polarizado
-
-    conductance_base recibe gradientes reales. QuarkBundle corre en no_grad
-    y solo produce escalares S y dim_div (sin parametros propios).
-
-    Analogo directo de UP: Q_eff = (1-rho)*Q0 + rho*Q1
-    donde Q0=canal_base, Q1=canal_stress_modulado.
-    """
-    def __init__(self, dim: int, n_views: int, t_min: float, t_max: float,
+    """Isomeric Polarization Axon — v2.3c (UP-style rho-mixing) The axon is polarized according to the isometric compression of the model:
+rho(S) = sigmoid(k * (S - S_threshold)) in [0, 1]
+c_base = sigmoid(conductance_base) <- no stress: free flow
+c_stressed = c_base * (1 - lam * div_norm) <- low stress: suppresses redundant dims
+mask = (1 - rho) * c_base + rho * c_stressed
+Low S (sparse representations) -> rho~0 -> mask~c_base -> open axon
+High S (compressed representations) -> rho~1 -> mask~c_stressed -> polarized axon conductance_base receives real gradients. 
+QuarkBundle runs on no_grad and only produces scalars S and dim_div (without (own parameters).
+UP analog: Q_eff = (1-rho)*Q0 + rho*Q1 where Q0 = base channel, Q1 = stress-modulated channel."""
+def __init__(self, dim: int, n_views: int, t_min: float, t_max: float,
                  lam: float, stress_threshold: float):
         super().__init__()
         self.dim              = dim
@@ -508,14 +445,10 @@ class AxonProjector(nn.Module):
         self.t_max            = t_max
         self.lam              = lam
         self.stress_threshold = stress_threshold
-
-        # conductance_base: sigmoid(~0)=0.5, gradientes activos desde paso 0
+        # conductance_base: sigmoid(~0)=0.5
         self.conductance_base = nn.Parameter(
             torch.zeros(dim, dtype=torch.float32).normal_(mean=0.0, std=0.1))
-
-        # rho_k escala la transicion — aprendible, inicia suave (k=2.0)
         self.rho_k = nn.Parameter(torch.tensor(2.0))
-
         self.quarks         = QuarkBundle()
         self.last_S         = 0.0
         self.last_rho       = 0.0
@@ -527,8 +460,6 @@ class AxonProjector(nn.Module):
     def forward(self, h: Tensor) -> Tensor:
         h_flat = h.reshape(-1, self.dim)
         h_mean = h_flat.mean(dim=0, keepdim=True)
-
-        # Paso 1: senal isometrica — QuarkBundle sin gradiente (no tiene params)
         with torch.no_grad():
             temps    = np.linspace(self.t_min, self.t_max, self.n_views)
             phi_list = []
@@ -539,31 +470,21 @@ class AxonProjector(nn.Module):
             S, dim_div = self.quarks.observe(phi_list)
 
         self.last_S = S
-
-        # Paso 2: rho isometrico — polarizacion segun compresion
         k   = self.rho_k.clamp(min=0.5, max=8.0)
         S_t = torch.tensor(S, dtype=h.dtype, device=h.device)
         rho = torch.sigmoid(k * (S_t - self.stress_threshold))
         self.last_rho = float(rho.item())
-
-        # Paso 3: dos canales de conductance (gradientes reales via conductance_base)
         cb = self.conductance_base.to(h.dtype)
 
-        # Canal Q0 — base, sin modulacion
         c_base = torch.sigmoid(cb)
-
-        # Canal Q1 — suprime dimensiones con alta divergencia (redundantes bajo compresion)
         dim_div_t    = dim_div.to(device=h.device, dtype=h.dtype)
         dim_div_norm = dim_div_t / (dim_div_t.max() + 1e-9)
         c_stressed   = c_base * (1.0 - self.lam * dim_div_norm)
         c_stressed   = c_stressed.clamp(min=0.05)
 
-        # Paso 4: mezcla isometrica UP-style
         mask = (1.0 - rho) * c_base + rho * c_stressed
-
         self.last_mask_mean = float(mask.mean().item())
         return h * mask.unsqueeze(0).unsqueeze(0)
-
 
 class MoleculeGate(nn.Module):
     def __init__(self, dim: int, vocab_size: int):
@@ -582,25 +503,18 @@ class MoleculeGate(nn.Module):
         stress_weight = min((S - stress_threshold) / (1.0 - stress_threshold + 1e-9), 1.0)
         return logits + stress_weight * correction
 
-
-# ─────────────────────────────────────────────────────────────
 # ARCHITECTURE PRIMITIVES
-# ─────────────────────────────────────────────────────────────
-
 class RMSNorm(nn.Module):
     def __init__(self, eps: float | None = None):
         super().__init__()
         self.eps = eps
-
     def forward(self, x: Tensor) -> Tensor:
         return F.rms_norm(x, (x.size(-1),), eps=self.eps)
-
 
 class CastedLinear(nn.Linear):
     def forward(self, x: Tensor) -> Tensor:
         return F.linear(x, self.weight.to(x.dtype),
                         self.bias.to(x.dtype) if self.bias is not None else None)
-
 
 class Rotary(nn.Module):
     def __init__(self, dim: int, base: float = 10000.0):
@@ -622,12 +536,10 @@ class Rotary(nn.Module):
             self._seq_len_cached = seq_len
         return self._cos_cached.to(dtype=dtype), self._sin_cached.to(dtype=dtype)
 
-
 def apply_rope(x: Tensor, cos: Tensor, sin: Tensor) -> Tensor:
     h = x.size(-1) // 2
     x1, x2 = x[..., :h], x[..., h:]
     return torch.cat((x1*cos + x2*sin, x1*(-sin) + x2*cos), dim=-1)
-
 
 class GQAttention(nn.Module):
     def __init__(self, dim: int, n_heads: int, n_kv_heads: int, rope_base: float,
@@ -664,7 +576,6 @@ class GQAttention(nn.Module):
         y = F.scaled_dot_product_attention(q, k, v, attn_mask=None, is_causal=True)
         return self.proj(y.transpose(1, 2).contiguous().reshape(B, T, D))
 
-
 class MLP(nn.Module):
     def __init__(self, dim: int, mult: int):
         super().__init__()
@@ -676,11 +587,7 @@ class MLP(nn.Module):
         return self.proj(x.square())
 
 
-# ─────────────────────────────────────────────────────────────
-# PHASE 1 — PLASTIC DENDRITIC ENCODER  (Experiencia)
-# Unchanged from v1 — independent agents, multi-scale.
-# ─────────────────────────────────────────────────────────────
-
+# PHASE 1 — PLASTIC DENDRITIC ENCODER  (Experience)
 class PlasticDendriticField(nn.Module):
     def __init__(self, dim: int, n_proto: int):
         super().__init__()
@@ -701,7 +608,6 @@ class PlasticDendriticField(nn.Module):
         recall  = weights @ self.prototypes.float()
         alpha   = sim.max(dim=-1, keepdim=True).values.clamp(0.0, 1.0)
         return ((1.0 - alpha) * h.float() + alpha * recall).to(dtype)
-
 
 class DendriticEncoder(nn.Module):
     def __init__(self, dim: int, field_heads: list[int],
@@ -728,12 +634,9 @@ class DendriticEncoder(nn.Module):
         self.plastic_mid    = PlasticDendriticField(dim, n_proto)
         self.plastic_global = PlasticDendriticField(dim, n_proto)
         self.field_mix = nn.Parameter(torch.ones(3, dtype=torch.float32) / 3.0)
-        # [PERF-2] Cache de span masks — no recrear en cada forward.
         self._mask_cache: dict = {}
 
     def _make_span_mask(self, T: int, span: int, device, dtype) -> Tensor:
-        # [PERF-2] Cacheado por (T, span, device, dtype). El mask es determinista
-        # y el seq_len es fijo durante el run → se construye una vez por campo.
         key = (T, span, str(device), str(dtype))
         cached = self._mask_cache.get(key)
         if cached is not None:
@@ -745,7 +648,6 @@ class DendriticEncoder(nn.Module):
             causal = causal & dist_mask
         mask = torch.zeros(T, T, device=device, dtype=dtype)
         mask.masked_fill_(~causal, float("-inf"))
-        # (1, 1, T, T) listo para broadcast sobre (B, n_heads, T, T)
         mask = mask.unsqueeze(0).unsqueeze(0)
         self._mask_cache[key] = mask
         return mask
@@ -768,7 +670,6 @@ class DendriticEncoder(nn.Module):
             k_exp = k
             v_exp = v
             if span < T:
-                # [PERF-2] Mask cacheado, ya incluye unsqueeze(0,0) y dtype correcto.
                 attn_mask = self._make_span_mask(T, span, x.device, q.dtype)
                 y = F.scaled_dot_product_attention(
                     q, k_exp, v_exp, attn_mask=attn_mask, is_causal=False,
@@ -789,75 +690,41 @@ class DendriticEncoder(nn.Module):
         mix   = F.softmax(self.field_mix.to(x.dtype), dim=0)
         mixed = sum(mix[i] * field_outputs[i] for i in range(3))
         return self.proj(mixed)
+        
+# [NEW] RESONANCE BUFFER
+# Implementation:
+# - K slots of size (D,) — initialized to zero
+# - Circular buffer: new state is written to the current PTR
+# - Update: EMA of the Soma's hidden state
+# - No trainable parameters — pure observation of the environment
+# - filled: flag indicating whether the buffer has actual content
 
+# Philosophy:
+# Memory is not "stored" — it resonates. If there is no match with the previous stream, there is no signal.
+# If there is a match, the PerceptionAgent detects and amplifies it.
 
-# ─────────────────────────────────────────────────────────────
-# [NEW] RESONANCE BUFFER  (Memoria emergente)
-#
-# No es un almacén — es un registro del flujo.
-# La memoria aparece cuando el estado actual resuena con lo
-# que ya ha pasado por el Soma.
-#
-# Implementación:
-#   - K slots de tamaño (D,) — inicializados en cero
-#   - Buffer circular: nuevo estado se escribe en ptr actual
-#   - Actualización: EMA del hidden state del Soma
-#   - Sin params entrenables — pura observación del medio
-#   - filled: flag que indica si el buffer tiene contenido real
-#
-# Filosofía:
-#   La memoria no se "guarda" — resuena.
-#   Si no hay match con el flujo previo, no hay señal.
-#   Si hay match, el PerceptionAgent lo detecta y lo amplifica.
-# ─────────────────────────────────────────────────────────────
-
-
-# ═════════════════════════════════════════════════════════════
 # [v2.3 NEW] ISOMERIC POLARIZATION MONITOR
-#
-# Adaptación del framework PfV (Ledesma, "Polarization from
-# Views — Isomeric Polarization") aplicado como AUTO-OBSERVADOR
-# INTERNO del modelo.
-#
-# Cada conjunto de realizaciones (slots del ResonanceBuffer,
-# prototipos del PlasticDendriticField) es un ℛ_t del paper.
-# Computamos:
-#
-#   P_t     = Agg({ d(Φ(r^i), Φ(r^j)) })_{i<j}    (instantánea)
-#   P_reg   = E_{t ∈ window}[P_t]                   (régimen)
-#   ΔP_t    = P_t − P_{t−1}                         (velocidad)
-#   Δ²P_t   = ΔP_t − ΔP_{t−1}                       (aceleración)
-#   ε_t     = quantile(d_pairs, q)                  (umbral isomérico)
-#   iso_mask = { (i,j) : d_ij ≤ ε_t }              (pares isómeros)
-#
-# Observable Φ = identity (slots y prototipos son vectores en 𝒴).
-# Divergencia d = distancia coseno ∈ [0, 2].
-# Agregador Agg = mean (default) o trimmed_mean (robusto).
-#
-# Señales útiles:
-#   P_t → 0    : colapso — realizaciones redundantes (mode=mean bug)
-#   P_t alto   : incoherencia — ruido en las realizaciones
-#   Δ²P_t alto : transición de régimen — momento crítico del flujo
-#   n_isomers↑ : plasticidad estructural indicada (poda/sustitución)
-#   dead > τ   : ramas inactivas — candidatas a renacimiento
-#
-# Sin params entrenables. Sin .item() en el hot path.
-# Overhead: O(K²·D) por compute — trivial para K∈[16,64], D=512.
-# ═════════════════════════════════════════════════════════════
+# Adaptation of the PfV framework (Ledesma, "Polarization from Views — Isomeric Polarization") applied as an INTERNAL SELF-OBSERVER
+# of the model. Each set of realizations (ResonanceBuffer slots, PlasticDendriticField prototypes) is an ℛ_t of the paper.
+# We compute:
+#    P_t = Agg({ d(Φ(r^i), Φ(r^j)) })_{i<j} (snapshot)
+#    P_reg = E_{t ∈ window}[P_t] (regime)
+#    ΔP_t = P_t − P_{t−1} (speed)
+#    Δ²P_t = ΔP_t − ΔP_{t−1} (acceleration)
+#    ε_t = quantile(d_pairs, q) (isomeric threshold)
+#    iso_mask = { (i,j) : d_ij ≤ ε_t } (isomer pairs)
+# Observable Φ = identity (slots and prototypes are vectors in 𝒴).
+# Divergence d = cosine distance ∈ [0, 2].
+# Aggregator Agg = mean (default) or trimmed_mean (robust).
+# Useful signals:
+# P_t → 0 : collapse — redundant realizations (mode=mean bug)
+# High P_t : incoherence — noise in the realizations
+# High Δ²P_t : regime transition — critical moment of flow
+# n_isomers↑ : indicated structural plasticity (pruning/replacement)
+# dead > τ : inactive branches — candidates for rebirth
+# No trainable parameters. No .item() in the hot path. Overhead: O(K²·D) per compute — trivial for K∈[16,64], D=512.
 
 class IsomericPolarizationMonitor(nn.Module):
-    """
-    PfV monitor aplicado a un conjunto de m realizaciones.
-
-    Args:
-        n_realizations: m, número de realizaciones en ℛ_t
-        window:         tamaño del ring buffer de P_history (para régimen)
-        agg:            'mean' o 'trimmed_mean'  (Agg del paper)
-        epsilon_quantile: q ∈ (0,1). ε_t = quantile(d_pairs, q).
-                         q pequeño (0.1) → ε estricto, pocos isómeros
-                         q grande  (0.5) → ε laxo, muchos isómeros
-        activation_ema: EMA decay para activation_count
-    """
     def __init__(self, n_realizations: int, window: int = 50,
                  agg: str = 'mean', epsilon_quantile: float = 0.1,
                  activation_ema: float = 0.95):
