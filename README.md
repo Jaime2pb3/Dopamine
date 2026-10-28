@@ -63,6 +63,9 @@ A language model organized like cortical processing rather than a plain transfor
 | Build | Compressed size | val_bpb (FineWeb) | Hardware |
 |-------|-----------------|-------------------|----------|
 | Dopamine (best) | ≈ 16 MB | **≈ 1.232** | RTX 3060 12 GB |
+| ACH v0.3-geometric (6500 steps, 22.3M params) | 6.46 MB | 1.5811 | RTX 3060 12 GB |
+
+ACH is the next generation of this line (Geometric Dendrite + Cholinergic Gate). Its gate collapsed in the reported run, which is documented in [`ach/README.md`](ach/README.md) together with the diagnosis.
 
 The Isomeric TTT variant is evaluated as an **A/B ablation** (`TTT_ENABLED=1` vs `0`) across 3 seeds. A run counts as a valid improvement when **Δval_bpb > 0.005 nats at p < 0.01**. See [`docs/ttt_iso_es.md`](docs/ttt_iso_es.md) for the full diagnostic notes.
 
@@ -148,6 +151,10 @@ Dopamine/
 ├── LICENSE                                # MIT
 ├── requirements.txt
 ├── train_dopamine_v3_ttt_iso_3060.py      # full model + Isomeric TTT trainer + eval loop
+├── ach/                                   # ACH v0.3-geometric, next generation (see ach/README.md)
+│   ├── ach_v0_3_geometric.py
+│   ├── test_ach_v0_3_geometric.py         # CPU tests, incl. bit-exact A/B against v0.2.1
+│   └── legacy/ach_v0_2_1_persistent.py    # frozen baseline for that A/B
 └── docs/
     └── ttt_iso_es.md                      # detailed technical notes (ES): loss, legality, diagnostics, risks
 ```
